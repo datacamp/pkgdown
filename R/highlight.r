@@ -1,4 +1,7 @@
 syntax_highlight <- function(text, index = NULL, current = NULL) {
+
+  return(text)
+
   stopifnot(is.character(text), length(text) == 1)
 
   expr <- tryCatch(
@@ -165,6 +168,7 @@ find_local_topic <- function(alias, index, current = NULL) {
 }
 
 link_local <- function(label, topic, index, current = NULL) {
+  return(sprintf("<a href='%s'></a>", label))
   topic <- find_local_topic(topic, index = index, current = current)
   if (is.null(topic)) {
     label

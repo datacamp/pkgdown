@@ -107,6 +107,8 @@ as_html.tag_link <- function(x, ..., index = NULL, current = NULL) {
 
   in_braces <- flatten_text(x[[1]])
 
+  return(sprintf("<a rd-options='%s' href='%s'></a>", opt %||% '', in_braces))
+
   if (is.null(opt)) {
     # \link{topic}
     link_local(in_braces, in_braces, index = index, current = current)
@@ -138,6 +140,7 @@ as_html.tag_linkS4class <- function(x, ..., index = NULL, current = NULL) {
   stopifnot(length(x) == 1)
 
   in_braces <- flatten_text(x[[1]])
+
   link_local(in_braces, paste0(in_braces, "-class"), index = index, current = current)
 }
 
