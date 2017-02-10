@@ -240,7 +240,14 @@ as_html.tag_describe <- function(x, ...) {
 # sequence of tags.
 #' @export
 as_html.tag_item <- function(x, ...) {
-  ""
+  tryCatch({
+    paste0(
+      "<dt>", flatten_text(x[[1]], ...), "</dt>",
+      "<dd>", flatten_text(x[-1], ...), "</dd>"
+    )
+  }, error = function(e) {
+    flatten_text(x, ...)
+  })
 }
 
 parse_items <- function(rd, ...) {
