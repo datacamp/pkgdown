@@ -81,7 +81,7 @@ topic_index <- function(path = ".") {
 
 package_rd <- function(path) {
   man_path <- file.path(path, "man")
-  rd <- dir(man_path, pattern = "\\.Rd$", full.names = TRUE)
+  rd <- dir(man_path, pattern = "\\.Rd$", full.names = TRUE, recursive = TRUE)
   names(rd) <- basename(rd)
   lapply(rd, rd_file, pkg_path = path)
 }
