@@ -107,7 +107,7 @@ as_html.tag_link <- function(x, ..., index = NULL, current = NULL) {
 
   in_braces <- flatten_text(x[[1]])
 
-  return(sprintf("<a rd-options='%s' href='%s'></a>", opt %||% '', in_braces))
+  return(sprintf("<a rd-options='%s' href='%s'>%s</a>", opt %||% '', in_braces, in_braces))
 
   if (is.null(opt)) {
     # \link{topic}
