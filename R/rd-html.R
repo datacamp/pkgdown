@@ -4,7 +4,50 @@ as_html <- function(x, ...) {
 
 # Various types of text ------------------------------------------------------
 
+flatten_para <- function(x, ...) {
+  # Look for "\n" TEXT blocks within sequence of TEXT blocks
+  is_nl <- purrr::map_lgl(x, is_newline)
+  is_text <- purrr::map_lgl(x, inherits, "TEXT")
+  is_text_prev <- c(FALSE, is_text[-length(x)])
+  is_text_next <- c(is_text[-1], FALSE)
+  is_para_break <- is_nl & is_text_prev & is_text_next
+
+  # Or tags that are converted to HTML blocks
+  block_tags <- c(
+    "tag_preformatted", "tag_itemize", "tag_enumerate", "tag_tabular",
+    "tag_describe", "tag_subsection"
+  )
+  is_block <- purrr::map_lgl(x, inherits, block_tags)
+
+  # Break before and after each status change
+  before_break <- is_para_break | is_block
+  after_break <- c(FALSE, before_break[-length(x)])
+  groups <- cumsum(before_break | after_break)
+
+  blocks <- x %>%
+    purrr::map_chr(as_html, ...) %>%
+    split(groups) %>%
+    purrr::map_chr(paste, collapse = "")
+
+  # There are three types of blocks:
+  # 1. Combined text and inline tags
+  # 2. Paragraph breaks (text containing only "\n")
+  # 3. Block-level tags
+  #
+  # Need to wrap 1 in <p>
+  needs_p <- (!(is_nl | is_block)) %>%
+    split(groups) %>%
+    purrr::map_lgl(any)
+
+  blocks[needs_p] <- paste0("<p>", trimws(blocks[needs_p]), "</p>")
+
+  paste0(blocks, collapse = "")
+}
+
+
 flatten_text <- function(x, ...) {
+  if (length(x) == 0) return("")
+
   x %>%
     purrr::map_chr(as_html, ...) %>%
     paste(collapse = "")
@@ -13,26 +56,11 @@ flatten_text <- function(x, ...) {
 #' @export
 as_html.Rd <- function(x, ...) flatten_text(x, ...)
 
-# All components inside a text string should be collapsed into a single string
-# Also need to do html escaping here and in as_html.RCODE
 #' @export
-as_html.TEXT <-  function(x, ...) flatten_text(x, ...)
-#' @export
-as_html.RCODE <- function(x, ...) flatten_text(x, ...)
-#' @export
-as_html.LIST <-  function(x, ...) flatten_text(x, ...)
-#' @export
-as_html.VERB <-  function(x, ...) flatten_text(x, ...)
-#' @export
-as_html.COMMENT <- function(x, ...) {
-  paste0("<!-- ", flatten_text(x), " -->")
-}
+as_html.LIST <-  flatten_text
 
-# USERMACRO appears first, followed by the rendered macro
-#' @export
-as_html.USERMACRO <-  function(x, ...) ""
+# Leaves  -----------------------------------------------------------------
 
-# If it's a character vector, we've got to the leaves of the tree
 #' @export
 as_html.character <- function(x, ..., escape = TRUE) {
   # src_highlight (used by usage & examples) also does escaping
@@ -40,9 +68,22 @@ as_html.character <- function(x, ..., escape = TRUE) {
   if (escape) {
     escape_html(x)
   } else {
-    x
+    as.character(x)
   }
 }
+#' @export
+as_html.TEXT <-  as_html.character
+#' @export
+as_html.RCODE <- as_html.character
+#' @export
+as_html.VERB <-  as_html.character
+#' @export
+as_html.COMMENT <- function(x, ...) {
+  paste0("<!-- ", flatten_text(x), " -->")
+}
+# USERMACRO appears first, followed by the rendered macro
+#' @export
+as_html.USERMACRO <-  function(x, ...) ""
 
 #' @export
 as_html.tag_subsection <- function(x, ...) {
@@ -88,8 +129,8 @@ as_html.tag_url <- function(x, ...) {
 as_html.tag_href <- function(x, ...) {
   stopifnot(length(x) == 2)
   paste0(
-    "<a href = '", flatten_text(x[[2]]), "'>",
-    flatten_text(x[[1]]),
+    "<a href = '", flatten_text(x[[1]]), "'>",
+    flatten_text(x[[2]]),
     "</a>"
   )
 }
@@ -102,10 +143,9 @@ as_html.tag_email <- function(x, ...) {
 # If single, need to look up alias to find file name and package
 #' @export
 as_html.tag_link <- function(x, ..., index = NULL, current = NULL) {
-  stopifnot(length(x) == 1)
   opt <- attr(x, "Rd_option")
 
-  in_braces <- flatten_text(x[[1]])
+  in_braces <- flatten_text(x)
 
   return(sprintf("<a rd-options='%s' href='%s'>%s</a>", opt %||% '', in_braces, in_braces))
 
@@ -189,7 +229,7 @@ as_html.tag_if <- function(x, ...) {
 
 #' @export
 as_html.tag_ifelse <- function(x, ...) {
-  if (x[[1]] == "html") as_html(x[[2]]) else as_html(x[[3]])
+  if (x[[1]] == "html") as_html(x[[2]], ...) else as_html(x[[3]], ...)
 }
 
 # Tables ---------------------------------------------------------------------
@@ -220,20 +260,41 @@ as_html.tag_tabular <- function(x, ...) {
 }
 
 
+# Figures -----------------------------------------------------------------
+
+#' @export
+as_html.tag_figure <- function(x, ...) {
+  n <- length(x)
+  path <- as.character(x[[1]])
+
+  if (n == 1) {
+    paste0("<img src='figures/", path, "' alt='' />")
+  } else if (n == 2) {
+    opt <- as.character(x[[2]])
+    if (substr(opt, 1, 9) == "options: ") {
+      extra <- substr(opt, 9, nchar(opt))
+      paste0("<img src='figures/", path, "'",  extra, " />")
+    } else {
+      paste0("<img src='figures/", path, "' alt='", opt, "' />")
+    }
+  } else {
+    stop("Invalid \\figure{} markup", call. = FALSE)
+  }
+}
 
 # List -----------------------------------------------------------------------
 
 #' @export
 as_html.tag_itemize <- function(x, ...) {
-  paste0("<ul>\n", parse_items(x[-1], ...), "</ul>\n")
+  paste0("<ul>\n", parse_items(x[-1], ...), "</ul>")
 }
 #' @export
 as_html.tag_enumerate <- function(x, ...) {
-  paste0("<ol>\n", parse_items(x[-1], ...), "</ol>\n")
+  paste0("<ol>\n", parse_items(x[-1], ...), "</ol>")
 }
 #' @export
 as_html.tag_describe <- function(x, ...) {
-  paste0("<dl class='dl-horizontal'>\n", parse_descriptions(x[-1], ...), "</dl>\n")
+  paste0("<dl class='dl-horizontal'>\n", parse_descriptions(x[-1], ...), "</dl>")
 }
 
 # Effectively does nothing: only used by parse_items() to split up
@@ -254,12 +315,15 @@ parse_items <- function(rd, ...) {
   separator <- purrr::map_lgl(rd, inherits, "tag_item")
   group <- cumsum(separator)
 
-  # remove empty first group, if present
-  rd <- rd[group != 0]
-  group <- group[group != 0]
+  # Drop anything before first tag_item
+  if (!all(group == 0) && any(group == 0)) {
+    rd <- rd[group != 0]
+    group <- group[group != 0]
+  }
 
   parse_item <- function(x) {
-    paste0("<li>", flatten_text(x, ...), "</li>\n")
+    x <- trim_ws_nodes(x)
+    paste0("<li>", flatten_para(x, ...), "</li>\n")
   }
 
   rd %>%
@@ -275,7 +339,7 @@ parse_descriptions <- function(rd, ...) {
     if (inherits(x, "tag_item")) {
       paste0(
         "<dt>", flatten_text(x[[1]], ...), "</dt>",
-        "<dd>", flatten_text(x[-1], ...), "</dd>"
+        "<dd>", flatten_para(x[-1], ...), "</dd>"
       )
     } else {
       flatten_text(x, ...)
@@ -310,7 +374,20 @@ as_html.tag_dQuote <-       tag_wrapper("&#8220;", "&#8221;")
 as_html.tag_sQuote <-       tag_wrapper("&#8216;", "&#8217;")
 
 #' @export
-as_html.tag_code <-         tag_wrapper("<code>", "</code>")
+as_html.tag_code <-         function(x, ..., depth = 1L) {
+  html <- flatten_text(x, ...)
+
+  expr <- tryCatch(
+    parse(text = html)[[1]],
+    error = function(e) NULL
+  )
+
+  if (is_call_vignette(expr)) {
+    html <- link_vignette(expr, html, depth = depth)
+  }
+
+  paste0("<code>", html, "</code>")
+}
 #' @export
 as_html.tag_special <-      tag_wrapper("<code>", "</code>")
 #' @export
@@ -398,3 +475,32 @@ as_html.tag <- function(x, ...) {
     ""
   }
 }
+
+# Whitespace helper -------------------------------------------------------
+
+trim_ws_nodes <- function(x, side = c("both", "left", "right")) {
+  is_ws <- purrr::map_lgl(x, ~ inherits(., "TEXT") && grepl("^\\s*$", .[[1]]))
+
+  if (!any(is_ws))
+    return(x)
+  if (all(is_ws))
+    return(x[0])
+
+  which_not <- which(!is_ws)
+
+  side <- match.arg(side)
+  if (side %in% c("left", "both")) {
+    start <- which_not[1]
+  } else {
+    start <- 1
+  }
+
+  if (side %in% c("right", "both")) {
+    end <- which_not[length(which_not)]
+  } else {
+    end <- length(x)
+  }
+
+  x[start:end]
+}
+

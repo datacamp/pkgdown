@@ -7,12 +7,14 @@
 \usage{
 build_site(pkg = ".", path = "docs", examples = TRUE,
   run_dont_run = FALSE, mathjax = TRUE, preview = interactive(),
-  seed = 1014)
+  seed = 1014, encoding = "UTF-8")
 
 init_site(pkg = ".", path = "docs")
 }
 \arguments{
-\item{pkg}{Path to source package.}
+\item{pkg}{Path to source package. If R working directory is not
+set to the source directory, then pkg must be a fully qualified
+path to the source directory (not a relative path).}
 
 \item{path}{Location in which to save website, relative to package
 path.}
@@ -27,6 +29,8 @@ path.}
 
 \item{seed}{Seed used to initialize so that random examples are
 reproducible.}
+
+\item{encoding}{The encoding of the input files.}
 }
 \description{
 \code{build_site()} is a convenient wrapper around four functions:
@@ -65,7 +69,7 @@ authors:
 \section{YAML config - navbar}{
 
 \code{navbar} controls the navbar at the top of the page. It uses the same
-syntax as \href{RMarkdown}{http://rmarkdown.rstudio.com/rmarkdown_websites.html#site_navigation}.
+syntax as \href{http://rmarkdown.rstudio.com/rmarkdown_websites.html#site_navigation}{RMarkdown}.
 The following YAML snippet illustrates some of the most important features.
 
 \preformatted{
@@ -126,6 +130,17 @@ template:
 
 See a complete list of themes and preview how they look at
 \url{https://gallery.shinyapps.io/117-shinythemes/}:
+
+Optionally provide the \code{ganalytics} template parameter to enable
+\href{Google Analytics}{https://www.google.com/analytics/}. It should
+correspond to your
+\href{tracking id}{https://support.google.com/analytics/answer/1032385}.
+
+\preformatted{
+template:
+  params:
+    ganalytics: UA-000000-01
+}
 
 You can also override the default templates and provide additional
 assets. You can do so by either storing in a \code{package} with

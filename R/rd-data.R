@@ -31,14 +31,14 @@ as_data.tag_item <- function(x, ...) {
 
   list(
     name = as_html(x[[1]], ...),
-    description = flatten_text(x[[2]], ...)
+    description = flatten_para(x[[2]], ...)
   )
 }
 
 # Sections ----------------------------------------------------------------
 
 parse_section <- function(x, title, ...) {
-  text <- flatten_text(x, ...)
+  text <- flatten_para(x, ...)
   paras <- split_at_linebreaks(text)
 
   list(
@@ -81,9 +81,28 @@ as_data.tag_section <- function(x, ...) {
 }
 #' @export
 as_data.tag_value <- function(x, ...) {
-  # \value is implicitly a \describe environment
-  class(x) <- c("tag_describe", class(x))
-  parse_section(x, "Value", ...)
+  # \value is implicitly a \describe environment, with
+  # optional text block before first \item
+
+  idx <- Position(function(x) inherits(x, "tag_item"), x, nomatch = 0)
+  if (idx == 0) {
+    text <- x
+    values <- list()
+  } else if (idx == 1) {
+    text <- list()
+    values <- x
+  } else {
+    text <- x[seq_len(idx - 1)]
+    values <- x[-seq_len(idx - 1)]
+  }
+
+  text <- if (length(text) > 0) flatten_para(text, ...) else NULL
+  values <- if (length(values) > 0) parse_descriptions(values) else NULL
+
+  list(
+    title = "Value",
+    contents = paste(c(text, values), collapse = "\n")
+  )
 }
 
 # Examples ------------------------------------------------------------------
@@ -95,10 +114,11 @@ as_data.tag_examples <- function(x, path, ...,
                              examples = TRUE,
                              run_dont_run = FALSE,
                              topic = "unknown",
-                             env = new.env(parent = globalenv())) {
+                             env = globalenv()) {
   # First element of examples tag is always empty
   text <- flatten_text(x[-1], ...,
     run_dont_run = run_dont_run,
+    examples = examples,
     escape = FALSE
   )
 
@@ -111,10 +131,14 @@ as_data.tag_examples <- function(x, path, ...,
     old_opt <- options(width = 80)
     on.exit(options(old_opt), add = TRUE)
 
-    expr <- evaluate::evaluate(text, env, new_device = TRUE)
+    code_env <- new.env(parent = env)
+    code_env$not_run <- function(...) invisible()
+
+    expr <- evaluate::evaluate(text, code_env, new_device = TRUE)
+
     replay_html(
       expr,
-      name = paste0(topic, "-"),
+      name_prefix = paste0(topic, "-"),
       index = index,
       current = current
     )
@@ -122,8 +146,8 @@ as_data.tag_examples <- function(x, path, ...,
 }
 
 #' @export
-as_html.tag_dontrun <- function(x, ..., run_dont_run = FALSE) {
-  if (run_dont_run) {
+as_html.tag_dontrun <- function(x, ..., examples = TRUE, run_dont_run = FALSE) {
+  if (!examples || run_dont_run) {
     flatten_text(drop_leading_newline(x), escape = FALSE)
   } else if (length(x) == 1) {
     paste0("## Not run: " , flatten_text(x))
@@ -131,9 +155,9 @@ as_html.tag_dontrun <- function(x, ..., run_dont_run = FALSE) {
     # Internal TEXT nodes contain leading and trailing \n
     text <- gsub("(^\n)|(\n$)", "", flatten_text(x, ...))
     paste0(
-      "## Not run: ------------------------------------\n",
-      "# " , gsub("\n", "\n# ", text), "\n",
-      "## ---------------------------------------------"
+      "not_run({\n" ,
+      "  ", gsub("\n", "\n  ", text),
+      "\n})"
     )
   }
 }
@@ -150,13 +174,13 @@ drop_leading_newline <- function(x) {
   if (length(x) == 0)
     return()
 
-  first <- x[[1]]
-  if (!inherits(first, "RCODE"))
-    return(x)
+  if (is_newline(x[[1]])) {
+    x[-1]
+  } else {
+    x
+  }
+}
 
-  first <- as.character(first)
-  if (!identical(first, "\n"))
-    return(x)
-
-  x[-1]
+is_newline <- function(x) {
+  inherits(x, "TEXT") && identical(x[[1]], "\n")
 }

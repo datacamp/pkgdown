@@ -24,7 +24,10 @@
 #'
 #' @inheritParams build_articles
 #' @export
-build_home <- function(pkg = ".", path = "docs", depth = 0L) {
+build_home <- function(pkg = ".", path = "docs", depth = 0L, encoding = "UTF-8") {
+  old <- set_pkgdown_env("true")
+  on.exit(set_pkgdown_env(old))
+
   rule("Building home")
 
   pkg <- as_pkgdown(pkg)
@@ -40,30 +43,48 @@ build_home <- function(pkg = ".", path = "docs", depth = 0L) {
   # Build authors page
   build_authors(pkg, path = path, depth = depth)
 
-  if (identical(tools::file_ext(data$path), "Rmd")) {
-    # Render once so that .md is up to date
-    message("Updating README.md")
-    rmarkdown::render(data$path, quiet = TRUE)
-    # In case preview_html = TRUE
-    unlink(file.path(pkg$path, "README.html"))
-
-    input <- file.path(path, basename(data$path))
-    file.copy(data$path, input)
-    on.exit(unlink(input))
-
-    render_rmd(pkg, input, "index.html",
-      depth = depth,
-      data = data,
-      toc = FALSE,
-      strip_header = TRUE
-    )
-  } else {
-    if (is.null(path)) {
-      data$index <- pkg$desc$get("Description")[[1]]
-    } else {
-      data$index <- markdown(path = data$path, depth = 0L, index = pkg$topics)
-    }
+  if (is.null(data$path)) {
+    data$index <- pkg$desc$get("Description")[[1]]
     render_page(pkg, "home", data, out_path(path, "index.html"), depth = depth)
+  } else {
+    file_name <- tools::file_path_sans_ext(basename(data$path))
+    file_ext <- tools::file_ext(data$path)
+
+    if (file_ext == "md") {
+      data$index <- markdown(path = data$path, depth = 0L, index = pkg$topics)
+      render_page(pkg, "home", data, out_path(path, "index.html"), depth = depth)
+    } else if (file_ext == "Rmd") {
+      if (identical(file_name, "README")) {
+        # Render once so that .md is up to date
+        message("Updating ", file_name, ".md")
+        callr::r_safe(
+          function(input, encoding) {
+            rmarkdown::render(
+              input,
+              output_options = list(html_preview = FALSE),
+              quiet = TRUE,
+              encoding = encoding
+            )
+          },
+          args = list(
+            input = data$path,
+            encoding = encoding
+          )
+        )
+      }
+
+      input <- file.path(path, basename(data$path))
+      file.copy(data$path, input)
+      on.exit(unlink(input))
+
+      render_rmd(pkg, input, "index.html",
+        depth = depth,
+        data = data,
+        toc = FALSE,
+        strip_header = TRUE,
+        encoding = encoding
+      )
+    }
   }
 
   update_homepage_html(
@@ -81,10 +102,13 @@ tweak_homepage_html <- function(html, strip_header = FALSE) {
 
   if (has_badges) {
     list <- list_with_heading(badges, "Dev status")
+    list_div <- paste0("<div>", list, "</div>")
+    list_html <- list_div %>% xml2::read_html() %>% xml2::xml_find_first(".//div")
 
-    html %>%
-      xml2::xml_find_first(".//div[@id='sidebar']") %>%
-      xml2::xml_add_child(xml2::read_html(list))
+    sidebar <- html %>% xml2::xml_find_first(".//div[@id='sidebar']")
+    list_html %>%
+      xml2::xml_children() %>%
+      purrr::walk(~ xml2::xml_add_child(sidebar, .))
 
     xml2::xml_remove(first_para)
   }
@@ -93,9 +117,17 @@ tweak_homepage_html <- function(html, strip_header = FALSE) {
   if (strip_header) {
     xml2::xml_remove(header, free = TRUE)
   } else {
-    page_header <- paste0("<div class='page-header'>", header, "</div>")
-    xml2::xml_replace(header, xml2::read_xml(page_header))
+    page_header_text <- paste0("<div class='page-header'>", header, "</div>")
+    page_header <- xml2::read_html(page_header_text) %>% xml2::xml_find_first("//div")
+    xml2::xml_replace(header, page_header)
   }
+
+  # Fix relative image links
+  imgs <- xml2::xml_find_all(html, ".//img")
+  urls <- xml2::xml_attr(imgs, "src")
+  new_urls <- gsub("^vignettes/", "articles/", urls)
+  new_urls <- gsub("^man/figures/", "reference/figures/", new_urls)
+  purrr::map2(imgs, new_urls, ~ (xml2::xml_attr(.x, "src") <- .y))
 
   tweak_tables(html)
 
@@ -221,10 +253,22 @@ data_link_cran <- function(pkg = ".") {
   )
 }
 
-on_cran <- function(pkg) {
-  pkgs <- utils::available.packages(type = "source")
+
+cran_mirror <- function() {
+  cran <- as.list(getOption("repos"))[["CRAN"]]
+  if (is.null(cran) || identical(cran, "@CRAN@")) {
+    "https://cran.rstudio.com"
+  } else {
+    cran
+  }
+}
+on_cran <- function(pkg, cran = cran_mirror()) {
+  pkgs <- utils::available.packages(
+    type = "source",
+    contriburl = paste0(cran, "/src/contrib"))
   pkg %in% rownames(pkgs)
 }
+
 
 link_url <- function(text, href) {
   label <- gsub("(/+)", "\\1&#8203;", href)

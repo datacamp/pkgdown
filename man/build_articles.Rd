@@ -4,16 +4,24 @@
 \alias{build_articles}
 \title{Build articles}
 \usage{
-build_articles(pkg = ".", path = "docs/articles", depth = 1L)
+build_articles(pkg = ".", path = "docs/articles", depth = 1L,
+  encoding = "UTF-8", quiet = TRUE)
 }
 \arguments{
-\item{pkg}{Path to source package.}
+\item{pkg}{Path to source package. If R working directory is not
+set to the source directory, then pkg must be a fully qualified
+path to the source directory (not a relative path).}
 
 \item{path}{Output path. Relative paths are taken relative to the
 \code{pkg} directory.}
 
-\item{depth}{Depth of path relative to root of documentation.
-Used to adjust relative links in the navbar.}
+\item{depth}{Depth of path relative to root of documentation.  Used
+to adjust relative links in the navbar.}
+
+\item{encoding}{The encoding of the input files.}
+
+\item{quiet}{Set to `FALSE` to display output of knitr and
+pandoc. This is useful when debugging.}
 }
 \description{
 Each Rmarkdown vignette in \code{vignettes/} and its subdirectories is
@@ -44,8 +52,9 @@ articles:
 Note that \code{contents} can contain either a list of vignette names
 (including subdirectories), or if the functions in a section share a
 common prefix or suffix, you can use \code{starts_with("prefix")} and
-\code{ends_with("suffix")} to select them all. For more complex naming
-schemes you can use an aribrary regular expression with
+\code{ends_with("suffix")} to select them all. If you don't care about
+position within the string, use \code{contains("word")}. For more complex
+naming schemes you can use an aribrary regular expression with
 \code{matches("regexp")}.
 
 pkgdown will check that all vignettes are included in the index

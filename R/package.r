@@ -1,3 +1,10 @@
+#' Generate pkgdown data structure
+#'
+#' You will generally not need to use this unless you need a custom site
+#' design and you're writing your own equivalent of \code{\link{build_site}}.
+#'
+#' @param path Path to package
+#' @export
 as_pkgdown <- function(path = ".") {
   if (is_pkgdown(path)) {
     return(path)
@@ -62,19 +69,27 @@ topic_index <- function(path = ".") {
 
   aliases <- purrr::map(rd, extract_tag, "tag_alias")
   names <- purrr::map_chr(rd, extract_tag, "tag_name")
-  titles <- purrr::map_chr(rd, extract_tag, "tag_title")
+  titles <- purrr::map_chr(rd, extract_title)
+  concepts <- purrr::map(rd, extract_tag, "tag_concept")
   internal <- purrr::map_lgl(rd, is_internal)
 
   file_in <- names(rd)
   file_out <- gsub("\\.Rd$", ".html", file_in)
+
+  usage <- purrr::map(rd, topic_usage)
+  funs <- purrr::map(usage, usage_funs)
+
 
   tibble::tibble(
     name = names,
     file_in = file_in,
     file_out = file_out,
     alias = aliases,
+    usage = usage,
+    funs = funs,
     title = titles,
     rd = rd,
+    concepts = concepts,
     internal = internal
   )
 }
@@ -90,6 +105,13 @@ extract_tag <- function(x, tag) {
   x %>%
     purrr::keep(inherits, tag) %>%
     purrr::map_chr(c(1, 1))
+}
+
+extract_title <- function(x) {
+  x %>%
+    purrr::detect(inherits, "tag_title") %>%
+    flatten_text() %>%
+    trimws()
 }
 
 is_internal <- function(x) {

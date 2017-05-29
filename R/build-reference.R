@@ -29,7 +29,14 @@
 #' or if the functions in a section share a common prefix or suffix, you
 #' can use \code{starts_with("prefix")} and \code{ends_with("suffix")} to
 #' select them all. For more complex naming schemes you can use an aribrary
-#' regular expression with \code{matches("regexp")}.
+#' regular expression with \code{matches("regexp")}. You can also use a leading
+#' `-` to exclude matches from a section. By default, these functions that
+#' match multiple topics will exclude topics with keyword "internal". To
+#' include, use (e.g.) \code{starts_with("build_", internal = TRUE)}.
+#'
+#' Alternatively, you can selected topics that contain specified concepts with
+#' \code{has_concept("blah")}. Concepts are not currently well-supported by
+#' roxygen2, but may be useful if you write Rd files by hand.
 #'
 #' pkgdown will check that all non-internal topics are included on
 #' this page, and will generate a warning if you have missed any.
@@ -60,13 +67,19 @@
 #' message("This is a message!")
 #' warning("This is a warning!")
 #'
+#' # This is a multi-line block
+#' {
+#'   1 + 2
+#'   2 + 2
+#' }
+#'
 #' \dontrun{
 #' stop("This is an error!", call. = FALSE)
 #' }
 #'
 #' \donttest{
 #' # This code won't generally be run by CRAN. But it
-#' # will be run by testthat.
+#' # will be run by pkgdown
 #' b <- 10
 #' a + b
 #' }
@@ -79,13 +92,28 @@ build_reference <- function(pkg = ".",
                             path = "docs/reference",
                             depth = 1L
                             ) {
+  old <- set_pkgdown_env("true")
+  on.exit(set_pkgdown_env(old))
+
   pkg <- as_pkgdown(pkg)
   path <- rel_path(path, pkg$path)
 
   rule("Building function reference")
+
   if (!is.null(path)) {
     mkdir(path)
   }
+
+  # copy everything from man/figures to docs/reference/figures
+  figures_path <- file.path(pkg$path, "man", "figures")
+  if (file.exists(figures_path) && !is.null(path)) {
+    out_path <- file.path(path, "figures")
+    message("Copying man/figures/")
+    mkdir(out_path)
+    copy_dir(figures_path, out_path)
+  }
+
+  build_reference_index(pkg, path = path, depth = depth)
 
   if (examples) {
     devtools::load_all(pkg$path)
@@ -102,9 +130,6 @@ build_reference <- function(pkg = ".",
       run_dont_run = run_dont_run,
       mathjax = mathjax
     )
-
-  build_reference_index(pkg, path = path, depth = depth)
-
   invisible()
 }
 
@@ -140,6 +165,8 @@ build_reference_topic <- function(topic,
                                   depth = 1L
                                   ) {
 
+  message("Processing ", topic$file_in)
+
   in_path <- file.path(pkg$path, "man", topic$file_in)
   out_path <- out_path(path, topic$file_out)
 
@@ -154,7 +181,8 @@ build_reference_topic <- function(topic,
       path = path,
       examples = examples,
       run_dont_run = run_dont_run,
-      mathjax = mathjax
+      mathjax = mathjax,
+      depth = depth
     ),
     path = out_path,
     depth = depth
@@ -170,7 +198,8 @@ data_reference_topic <- function(topic,
                                  examples = TRUE,
                                  run_dont_run = FALSE,
                                  mathjax = TRUE,
-                                 path = NULL
+                                 path = NULL,
+                                 depth = 1L
                                  ) {
 
   tag_names <- purrr::map_chr(topic$rd, ~ class(.)[[1]])
@@ -180,7 +209,7 @@ data_reference_topic <- function(topic,
 
   # Single top-level converted to string
   out$name <- flatten_text(tags$tag_name[[1]][[1]])
-  out$title <- flatten_text(tags$tag_title[[1]][[1]])
+  out$title <- extract_title(tags$tag_title)
 
   out$pagetitle <- paste0(out$title, " \u2014 ", out$name)
 
@@ -214,12 +243,13 @@ data_reference_topic <- function(topic,
   out$examples <- as_data(
     tags$tag_examples[[1]],
     env = new.env(parent = globalenv()),
-    topic = topic$name,
+    topic = tools::file_path_sans_ext(topic$file_in),
     index = pkg$topics,
     current = get_current(topic, pkg),
     path = path,
     examples = examples,
-    run_dont_run = run_dont_run
+    run_dont_run = run_dont_run,
+    depth = depth
   )
 
   # Everything else stays in original order, and becomes a list of sections.

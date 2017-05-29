@@ -13,7 +13,7 @@ inst_path <- function() {
 }
 
 "%||%" <- function(a, b) {
-  if (!is.null(a)) a else b
+  if (length(a)) a else b
 }
 
 markdown_text <- function(text, ...) {
@@ -76,8 +76,6 @@ tweak_anchors <- function(html, only_contents = TRUE) {
     gsub(".", "-", ., fixed = TRUE)
   purrr::walk2(sections, anchor, ~ (xml2::xml_attr(.x, "id") <- .y))
 
-  # Space is needed to ensure we get <a></a> instead of <a/>
-  links <- paste0("<a href='#", anchor, "' class='anchor'> </a>")
   headings <- xml2::xml_find_first(sections, ".//h1|h2|h3|h4|h5")
   has_heading <- !is.na(xml2::xml_name(headings))
 
@@ -88,7 +86,8 @@ tweak_anchors <- function(html, only_contents = TRUE) {
     xml2::xml_attr(heading, "class") <- "hasAnchor"
     xml2::xml_add_sibling(
       xml2::xml_contents(heading)[[1]],
-      xml2::read_html(links[[i]]),
+      "a", href = paste0("#", anchor[[i]]),
+      class = "anchor",
       .where = "before"
     )
   }
@@ -182,6 +181,14 @@ find_first_existing <- function(path, ...) {
   NULL
 }
 
+#' Compute relative path
+#'
+#' @param path Relative path
+#' @param base Base path
+#' @export
+#' @examples
+#' rel_path("a/b", base = "here")
+#' rel_path("/a/b", base = "here")
 rel_path <- function(path, base = ".") {
   if (is_absolute_path(path)) {
     path
@@ -220,4 +227,22 @@ out_of_date <- function(source, target) {
   }
 
   file.info(source)$mtime > file.info(target)$mtime
+}
+
+#' Determine if code is executed by pkgdown
+#'
+#' This is occassionally useful when you need different behaviour by
+#' pkgdown and regular documentation.
+#'
+#' @export
+#' @examples
+#' in_pkgdown()
+in_pkgdown <- function() {
+  identical(Sys.getenv("IN_PKGDOWN"), "true")
+}
+
+set_pkgdown_env <- function(x) {
+  old <- Sys.getenv("IN_PKGDOWN")
+  Sys.setenv("IN_PKGDOWN" = x)
+  invisible(old)
 }

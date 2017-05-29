@@ -33,7 +33,7 @@
 #'
 #' @section YAML config - navbar:
 #' \code{navbar} controls the navbar at the top of the page. It uses the same
-#' syntax as \href{RMarkdown}{http://rmarkdown.rstudio.com/rmarkdown_websites.html#site_navigation}.
+#' syntax as \href{http://rmarkdown.rstudio.com/rmarkdown_websites.html#site_navigation}{RMarkdown}.
 #' The following YAML snippet illustrates some of the most important features.
 #'
 #' \preformatted{
@@ -93,6 +93,17 @@
 #' See a complete list of themes and preview how they look at
 #' \url{https://gallery.shinyapps.io/117-shinythemes/}:
 #'
+#' Optionally provide the \code{ganalytics} template parameter to enable
+#' \href{Google Analytics}{https://www.google.com/analytics/}. It should
+#' correspond to your
+#' \href{tracking id}{https://support.google.com/analytics/answer/1032385}.
+#'
+#' \preformatted{
+#' template:
+#'   params:
+#'     ganalytics: UA-000000-01
+#' }
+#'
 #' You can also override the default templates and provide additional
 #' assets. You can do so by either storing in a \code{package} with
 #' directories \code{inst/pkgdown/assets} and \code{inst/pkgdown/templates},
@@ -131,15 +142,18 @@ build_site <- function(pkg = ".",
                        run_dont_run = FALSE,
                        mathjax = TRUE,
                        preview = interactive(),
-                       seed = 1014
+                       seed = 1014,
+                       encoding = "UTF-8"
                        ) {
+  old <- set_pkgdown_env("true")
+  on.exit(set_pkgdown_env(old))
 
   pkg <- as_pkgdown(pkg)
   path <- rel_path(path, pkg$path)
 
   init_site(pkg, path)
 
-  build_home(pkg, path = path)
+  build_home(pkg, path = path, encoding = encoding)
   build_reference(pkg,
     lazy = FALSE,
     examples = examples,
@@ -149,7 +163,7 @@ build_site <- function(pkg = ".",
     path = file.path(path, "reference"),
     depth = 1L
   )
-  build_articles(pkg, path = file.path(path, "articles"), depth = 1L)
+  build_articles(pkg, path = file.path(path, "articles"), depth = 1L, encoding = encoding)
   build_news(pkg, path = file.path(path, "news"), depth = 1L)
 
   if (preview) {
@@ -164,7 +178,8 @@ preview_site <- function(path) {
 
 build_site_rstudio <- function() {
   devtools::document()
-  build_site(preview = TRUE)
+  callr::r(function() pkgdown::build_site(preview = TRUE), show = TRUE)
+  invisible()
 }
 
 #' @export
@@ -174,7 +189,10 @@ init_site <- function(pkg = ".", path = "docs") {
   path <- rel_path(path, pkg$path)
 
   rule("Initialising site")
-  mkdir(path)
+  if (!file.exists(path)) {
+    mkdir(path)
+    usethis::use_build_ignore(path)
+  }
 
   assets <- data_assets(pkg)
   for (asset in assets) {

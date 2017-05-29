@@ -1,4 +1,4 @@
-templates:
+template:
   params:
     bootswatch: cerulean
 
@@ -7,11 +7,16 @@ reference:
     desc:  Build each component of the site.
     contents:
     - starts_with("build_")
-    - init_site
   - title: Templates
     contents:
     - template_navbar
     - render_page
+  - title: Helpers
+    contents:
+    - clean_site
+    - as_pkgdown
+    - in_pkgdown
+    - rel_path
 
 navbar:
   left:

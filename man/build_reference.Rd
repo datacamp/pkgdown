@@ -12,7 +12,9 @@ build_reference(pkg = ".", lazy = TRUE, examples = TRUE,
 build_reference_index(pkg = ".", path = "docs/reference", depth = 1L)
 }
 \arguments{
-\item{pkg}{Path to source package.}
+\item{pkg}{Path to source package. If R working directory is not
+set to the source directory, then pkg must be a fully qualified
+path to the source directory (not a relative path).}
 
 \item{lazy}{If \code{TRUE}, only rebuild pages where the \code{.Rd}
 is more recent than the \code{.html}. This makes it much easier to
@@ -30,8 +32,8 @@ reproducible.}
 \item{path}{Output path. Relative paths are taken relative to the
 \code{pkg} directory.}
 
-\item{depth}{Depth of path relative to root of documentation.
-Used to adjust relative links in the navbar.}
+\item{depth}{Depth of path relative to root of documentation.  Used
+to adjust relative links in the navbar.}
 }
 \description{
 By default, pkgdown will generate an index that simply lists all
@@ -64,7 +66,14 @@ Note that \code{contents} can contain either a list of function names,
 or if the functions in a section share a common prefix or suffix, you
 can use \code{starts_with("prefix")} and \code{ends_with("suffix")} to
 select them all. For more complex naming schemes you can use an aribrary
-regular expression with \code{matches("regexp")}.
+regular expression with \code{matches("regexp")}. You can also use a leading
+`-` to exclude matches from a section. By default, these functions that
+match multiple topics will exclude topics with keyword "internal". To
+include, use (e.g.) \code{starts_with("build_", internal = TRUE)}.
+
+Alternatively, you can selected topics that contain specified concepts with
+\code{has_concept("blah")}. Concepts are not currently well-supported by
+roxygen2, but may be useful if you write Rd files by hand.
 
 pkgdown will check that all non-internal topics are included on
 this page, and will generate a warning if you have missed any.
@@ -88,13 +97,19 @@ cat("This some text!\\n")
 message("This is a message!")
 warning("This is a warning!")
 
+# This is a multi-line block
+{
+  1 + 2
+  2 + 2
+}
+
 \dontrun{
 stop("This is an error!", call. = FALSE)
 }
 
 \donttest{
 # This code won't generally be run by CRAN. But it
-# will be run by testthat.
+# will be run by pkgdown
 b <- 10
 a + b
 }

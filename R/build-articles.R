@@ -27,8 +27,9 @@
 #' Note that \code{contents} can contain either a list of vignette names
 #' (including subdirectories), or if the functions in a section share a
 #' common prefix or suffix, you can use \code{starts_with("prefix")} and
-#' \code{ends_with("suffix")} to select them all. For more complex naming
-#' schemes you can use an aribrary regular expression with
+#' \code{ends_with("suffix")} to select them all. If you don't care about
+#' position within the string, use \code{contains("word")}. For more complex
+#' naming schemes you can use an aribrary regular expression with
 #' \code{matches("regexp")}.
 #'
 #' pkgdown will check that all vignettes are included in the index
@@ -42,13 +43,22 @@
 #' directory is present: if you do not want this, you will need to
 #' customise the navbar. See \code{\link{build_site}} details.
 #'
-#' @param pkg Path to source package.
+#' @param pkg Path to source package. If R working directory is not
+#'     set to the source directory, then pkg must be a fully qualified
+#'     path to the source directory (not a relative path).
 #' @param path Output path. Relative paths are taken relative to the
-#'   \code{pkg} directory.
-#' @param depth Depth of path relative to root of documentation.
-#'   Used to adjust relative links in the navbar.
+#'     \code{pkg} directory.
+#' @param depth Depth of path relative to root of documentation.  Used
+#'     to adjust relative links in the navbar.
+#' @param encoding The encoding of the input files.
+#' @param quiet Set to `FALSE` to display output of knitr and
+#'   pandoc. This is useful when debugging.
 #' @export
-build_articles <- function(pkg = ".", path = "docs/articles", depth = 1L) {
+build_articles <- function(pkg = ".", path = "docs/articles", depth = 1L,
+                           encoding = "UTF-8", quiet = TRUE) {
+  old <- set_pkgdown_env("true")
+  on.exit(set_pkgdown_env(old))
+
   pkg <- as_pkgdown(pkg)
   path <- rel_path(path, pkg$path)
   if (!has_vignettes(pkg$path)) {
@@ -68,7 +78,12 @@ build_articles <- function(pkg = ".", path = "docs/articles", depth = 1L) {
     depth = pkg$vignettes$vig_depth + depth
   )
   data <- list(pagetitle = "$title$")
-  purrr::pwalk(articles, render_rmd, pkg = pkg, data = data)
+  purrr::pwalk(articles, render_rmd,
+    pkg = pkg,
+    data = data,
+    encoding = encoding,
+    quiet = quiet
+  )
   purrr::walk(articles$input, unlink)
 
   build_articles_index(pkg, path = path, depth = depth)
@@ -82,18 +97,25 @@ render_rmd <- function(pkg,
                        strip_header = FALSE,
                        data = list(),
                        toc = TRUE,
-                       depth = 1L) {
+                       depth = 1L,
+                       encoding = "UTF-8",
+                       quiet = TRUE) {
   message("Building article '", output_file, "'")
 
   format <- build_rmarkdown_format(pkg, depth = depth, data = data, toc = toc)
   on.exit(unlink(format$path), add = TRUE)
 
-  path <- rmarkdown::render(
-    input,
-    output_format = format$format,
-    output_file = basename(output_file),
-    quiet = TRUE,
-    envir = new.env(parent = globalenv())
+  path <- callr::r_safe(
+    function(...) rmarkdown::render(...),
+    args = list(
+      input,
+      output_format = format$format,
+      output_file = basename(output_file),
+      quiet = quiet,
+      encoding = encoding,
+      envir = globalenv()
+    ),
+    show = !quiet
   )
   update_rmarkdown_html(path, strip_header = strip_header, depth = depth,
     index = pkg$topics)
@@ -174,8 +196,9 @@ data_articles_index <- function(pkg = ".", depth = 1L) {
     purrr::compact()
 
   # Check for unlisted vignettes
-  listed <- meta %>%
+  listed <- sections %>%
     purrr::map("contents") %>%
+    purrr::map(. %>% purrr::map_chr("name")) %>%
     purrr::flatten_chr() %>%
     unique()
   missing <- !(pkg$vignettes$name %in% listed)
@@ -206,9 +229,10 @@ data_articles_index_section <- function(section, pkg, depth = 1L) {
   }
 
   # Match topics against any aliases
-  in_section <- has_vignette(pkg$vignettes$name, section$contents)
+  in_section <- has_vignette(section$contents, pkg$vignettes)
   section_vignettes <- pkg$vignettes[in_section, ]
   contents <- tibble::tibble(
+    name = section_vignettes$name,
     path = section_vignettes$file_out,
     title = section_vignettes$title
   )
@@ -221,12 +245,16 @@ data_articles_index_section <- function(section, pkg, depth = 1L) {
   )
 }
 
-has_vignette <- function(vignettes, matches) {
-  matchers <- purrr::map(matches, topic_matcher)
-
-  matchers %>%
-    purrr::map(~ .x(vignettes)) %>%
-    purrr::reduce(`|`)
+has_vignette <- function(match_strings, vignettes) {
+  # Quick hack: create the same structure as for topics so we can use
+  # the existing has_topic()
+  topics <- tibble::tibble(
+    name = vignettes$name,
+    alias = as.list(vignettes$name),
+    internal = FALSE
+  )
+  sel <- select_topics(match_strings, topics)
+  seq_along(vignettes$name) %in% sel
 }
 
 default_articles_index <- function(pkg = ".") {
@@ -236,11 +264,13 @@ default_articles_index <- function(pkg = ".") {
     list(
       title = "All vignettes",
       desc = NULL,
-      contents = pkg$vignettes$name
+      contents = paste0("`", pkg$vignettes$name, "`")
     )
   ))
+
 }
 
 has_vignettes <- function(path = ".") {
-  file.exists(file.path(path, "vignettes"))
+  vign_path <- file.path(path, "vignettes")
+  file.exists(vign_path) && length(list.files(vign_path))
 }
